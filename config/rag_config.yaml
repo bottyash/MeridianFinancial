@@ -1,0 +1,40 @@
+# ─── Meridian Financial — RAG Pipeline Configuration ──────────────────────────
+# Loaded by src/rag/build_index.py and src/rag/retrieve.py
+# All values can be overridden by environment variables (see src/common/config.py)
+
+# ── Embedding model ────────────────────────────────────────────────────────────
+embedding:
+  model_name: "all-MiniLM-L6-v2"
+  batch_size: 64            # sentences encoded per forward pass
+  normalize_embeddings: true
+
+# ── Text chunking ──────────────────────────────────────────────────────────────
+chunking:
+  chunk_size: 300           # max tokens / characters per chunk
+  chunk_overlap: 50         # overlap between adjacent chunks
+  min_chunk_length: 30      # discard chunks shorter than this
+
+# ── ChromaDB vector store ──────────────────────────────────────────────────────
+chroma:
+  persist_directory: "chroma_store"
+  collection_name: "complaints"
+  distance_metric: "cosine"  # cosine | l2 | ip
+
+# ── Retrieval ──────────────────────────────────────────────────────────────────
+retrieval:
+  top_k: 5                  # number of chunks returned per query
+  refusal_threshold: 0.75   # cosine distance above which results are filtered
+                             # (ChromaDB distance: 0=identical, 2=opposite)
+                             # 0.75 means similarity < 0.25 → refuse
+
+# ── Data paths ─────────────────────────────────────────────────────────────────
+data:
+  complaints_sample_path: "data/samples/complaints_sample.csv"
+
+# ── Index metadata fields ──────────────────────────────────────────────────────
+metadata_fields:
+  - complaint_id
+  - product
+  - issue
+  - company
+  - date
