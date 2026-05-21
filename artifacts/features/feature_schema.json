@@ -1,0 +1,62 @@
+{
+  "version": "1.0",
+  "target_column": "y",
+  "numeric_features": [
+    "age",
+    "duration",
+    "campaign",
+    "previous",
+    "pdays",
+    "emp_var_rate",
+    "cons_price_idx",
+    "cons_conf_idx",
+    "euribor3m",
+    "nr_employed"
+  ],
+  "categorical_features": [
+    "job",
+    "marital",
+    "education",
+    "default",
+    "housing",
+    "loan",
+    "contact",
+    "month",
+    "day_of_week",
+    "poutcome"
+  ],
+  "all_feature_columns": [
+    "age",
+    "duration",
+    "campaign",
+    "previous",
+    "pdays",
+    "emp_var_rate",
+    "cons_price_idx",
+    "cons_conf_idx",
+    "euribor3m",
+    "nr_employed",
+    "job",
+    "marital",
+    "education",
+    "default",
+    "housing",
+    "loan",
+    "contact",
+    "month",
+    "day_of_week",
+    "poutcome"
+  ],
+  "numeric_steps": [
+    "median_imputer",
+    "standard_scaler"
+  ],
+  "categorical_steps": [
+    "constant_imputer",
+    "onehot_encoder"
+  ],
+  "onehot_handle_unknown": "ignore",
+  "scaler": "StandardScaler",
+  "imputer_numeric_strategy": "median",
+  "imputer_categorical_fill": "missing"
+}
