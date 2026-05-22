@@ -1,0 +1,15 @@
+# ─── Meridian Financial Dashboard — Python Dependencies ──────────────────────
+# Separate from the backend requirements.txt
+# Install: pip install -r dashboard/requirements.txt
+
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+streamlit>=1.35.0
+
+# ── Charts ────────────────────────────────────────────────────────────────────
+plotly>=5.20.0
+
+# ── HTTP client ───────────────────────────────────────────────────────────────
+requests>=2.31.0
+
+# ── Data ─────────────────────────────────────────────────────────────────────
+pandas>=2.2.0

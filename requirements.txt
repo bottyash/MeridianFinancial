@@ -1,0 +1,39 @@
+# ─── Meridian Financial — Python Dependencies ────────────────────────────────
+# Python 3.11 required
+# Install: pip install -r requirements.txt
+
+# ── Web serving ───────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+httpx>=0.27.0                  # async HTTP client (also used in API tests)
+
+# ── Data & ML ─────────────────────────────────────────────────────────────────
+pandas>=2.2.0
+numpy>=1.26.0
+scikit-learn>=1.4.0
+xgboost>=2.0.0
+pyarrow>=15.0.0                # Parquet support
+joblib>=1.3.0
+
+# ── Experiment tracking ───────────────────────────────────────────────────────
+mlflow>=2.12.0
+
+# ── RAG / Vector store ────────────────────────────────────────────────────────
+chromadb>=0.5.0
+sentence-transformers>=3.0.0
+
+# ── LLM ───────────────────────────────────────────────────────────────────────
+mistralai>=1.0.0
+
+# ── Monitoring / Drift ────────────────────────────────────────────────────────
+evidently>=0.4.30
+
+# ── Validation & Config ───────────────────────────────────────────────────────
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest>=8.2.0
+pytest-asyncio>=0.23.0

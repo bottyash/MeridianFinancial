@@ -115,6 +115,46 @@ services:
         max-file: "3"
 
 
+  # ── Streamlit Dashboard ───────────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    image: meridian-dashboard:latest
+    container_name: meridian_dashboard
+    restart: unless-stopped
+
+    ports:
+      - "${DASHBOARD_PORT:-8501}:8501"
+
+    environment:
+      # Point the dashboard at the API service on the shared network
+      - API_BASE_URL=http://api:8000
+      - ENVIRONMENT=${APP_ENV:-development}
+      - REQUEST_TIMEOUT=${REQUEST_TIMEOUT:-30}
+      - DASHBOARD_TITLE=${DASHBOARD_TITLE:-Meridian Financial Intelligence}
+
+    depends_on:
+      api:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+    networks:
+      - meridian_net
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+
 # ── Shared network ────────────────────────────────────────────────────────────
 networks:
   meridian_net:

@@ -1,1 +1,83 @@
 Week13_Customer_Intelligence_Platform.pdf
+.vscode
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment Variables
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# MLflow
+mlruns/
+
+# Data
+data/raw/
+*.parquet
+*.feather
+
+# Model Artifacts
+artifacts/models/
+artifacts/reports/
+*.pkl
+*.joblib
+*.onnx
+
+# Chroma / Vector DB
+chroma_store/
+artifacts/vectors/chroma_store/
+
+# Monitoring Outputs
+monitoring/report.html
+monitoring/*.json
+
+# Logs
+logs/
+*.log
+
+# IDEs
+.vscode/
+.idea/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Testing / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build / Distribution
+build/
+dist/
+*.egg-info/
+
+# HuggingFace Cache
+.cache/
+huggingface/
+
+# Docker
+*.tar
+
+# Temporary Files
+tmp/
+temp/
+
+# Secrets
+secrets/
+*.pem
+*.key
+
+docs/prompts
