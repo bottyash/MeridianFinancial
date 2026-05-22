@@ -1,0 +1,122 @@
+# ─── Meridian Financial — Docker Compose ─────────────────────────────────────
+# Services:
+#   api        — FastAPI serving layer (ML + RAG)
+#   mlflow     — MLflow experiment tracking server
+#
+# Usage:
+#   docker compose up --build          # build and start all services
+#   docker compose up api -d           # start only the API (background)
+#   docker compose down                # stop all services
+#   docker compose logs -f api         # tail API logs
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── FastAPI Application ──────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: meridian-financial:latest
+    container_name: meridian_api
+    restart: unless-stopped
+
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+    env_file:
+      - .env
+
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - APP_PORT=8000
+      - APP_WORKERS=${APP_WORKERS:-2}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - PYTHONPATH=/app
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      # Mistral API key (set in .env or CI secret — never hard-code)
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+
+    volumes:
+      # Read-only sample data — mount real data in production
+      - ./data/samples:/app/data/samples:ro
+      # Persist model artifacts across restarts
+      - ./artifacts:/app/artifacts
+      # ChromaDB vector store
+      - ./chroma_store:/app/chroma_store
+      # Monitoring output
+      - ./monitoring:/app/monitoring
+      # MLflow run artefacts
+      - ./mlruns:/app/mlruns
+
+    depends_on:
+      mlflow:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+    networks:
+      - meridian_net
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ── MLflow Tracking Server ────────────────────────────────────────────────────
+  mlflow:
+    image: python:3.11-slim
+    container_name: meridian_mlflow
+    restart: unless-stopped
+
+    command: >
+      bash -c "pip install --quiet mlflow &&
+               mlflow server
+                 --host 0.0.0.0
+                 --port 5000
+                 --backend-store-uri /mlruns
+                 --default-artifact-root /mlruns"
+
+    ports:
+      - "${MLFLOW_PORT:-5000}:5000"
+
+    volumes:
+      - ./mlruns:/mlruns
+
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+    networks:
+      - meridian_net
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+
+# ── Shared network ────────────────────────────────────────────────────────────
+networks:
+  meridian_net:
+    driver: bridge
+    name: meridian_network
