@@ -35,6 +35,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Ensure repo root is on sys.path so `src.*` imports resolve when this
+# script is run directly: python src/monitoring/rag_monitor.py
+_REPO_ROOT_STR = str(Path(__file__).resolve().parents[2])
+if _REPO_ROOT_STR not in sys.path:
+    sys.path.insert(0, _REPO_ROOT_STR)
+
 import numpy as np
 
 # ---------------------------------------------------------------------------

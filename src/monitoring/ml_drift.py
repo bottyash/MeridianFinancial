@@ -33,8 +33,16 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Ensure repo root is on sys.path so `src.*` imports resolve when this
+# script is run directly: python src/monitoring/ml_drift.py
+_REPO_ROOT_STR = str(Path(__file__).resolve().parents[2])
+if _REPO_ROOT_STR not in sys.path:
+    sys.path.insert(0, _REPO_ROOT_STR)
+
 import numpy as np
 import pandas as pd
+
+from src.monitoring.metrics_logger import MetricsLogger
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -348,8 +356,6 @@ def run(
     dict
         Drift summary dictionary.
     """
-    from src.monitoring.metrics_logger import MetricsLogger
-
     ml_logger = MetricsLogger()
 
     # 1. Load
