@@ -42,7 +42,7 @@ st.set_page_config(
     menu_items={
         "Get Help": "https://github.com/bottyash/MeridianFinancial",
         "Report a bug": "https://github.com/bottyash/MeridianFinancial/issues",
-        "About": "Meridian Financial Customer Intelligence Platform — IIT Gandhinagar Capstone",
+        "About": "Meridian Financial Customer Intelligence Platform",
     },
 )
 
@@ -83,7 +83,6 @@ with st.sidebar:
 """)
     st.divider()
     st.caption("Built with FastAPI + ChromaDB + Mistral")
-    st.caption("IIT Gandhinagar · Week 13 Capstone")
 
 # ---------------------------------------------------------------------------
 # Home page content

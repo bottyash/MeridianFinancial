@@ -80,7 +80,7 @@ def create_app() -> FastAPI:
         title="Meridian Financial — Customer Intelligence API",
         description=(
             "Production ML + RAG serving layer for campaign conversion prediction "
-            "and complaint intelligence. Part of the IIT Gandhinagar Week 13 capstone."
+            "and complaint intelligence."
         ),
         version="0.4.0",
         lifespan=lifespan,

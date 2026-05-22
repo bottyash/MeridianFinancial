@@ -1,7 +1,4 @@
 # Reflection — Meridian Financial Platform
-
-> Engineering reflection for IIT Gandhinagar Week 13 Capstone
-
 ---
 
 ## 1. Why XGBoost?
