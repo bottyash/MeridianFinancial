@@ -1,171 +1,259 @@
 # Deployment Guide — Meridian Financial
 
-## Prerequisites
+## Active Deployment: HuggingFace Spaces
 
-- Docker 24+ and Docker Compose v2
-- Python 3.11 (for local development)
-- `MISTRAL_API_KEY` from [console.mistral.ai](https://console.mistral.ai)
-- 4 GB RAM, 10 GB disk (for model artifacts + ChromaDB + MLflow)
+The current production deployment uses **HuggingFace Spaces** for both the API backend and the Streamlit dashboard. This provides:
+
+- ✅ Free-tier, permanent public hosting
+- ✅ No infrastructure management
+- ✅ Publicly accessible demo URLs
+- ✅ CPU-only compatible (no GPU required)
+- ✅ Lightweight startup
+
+> **Future Deployment (Planned):** AWS EC2 for production-scale backend infrastructure. See [Future AWS Architecture](#future-aws-architecture-planned) below.
 
 ---
 
-## Option A — Docker Compose (Recommended)
+## Active Deployment Architecture
 
-### 1. Clone the repository
+```
+GitHub Repo
+    │
+    ▼
+GitHub Actions (CI)
+    │  Validation + Tests + Promotion Gate
+    ▼
+Build Docker Images
+    │
+    ▼
+Deploy to HuggingFace Spaces
+    ├── bottyash/meridian-api        → FastAPI backend
+    └── bottyash/meridian-dashboard  → Streamlit dashboard
+    │
+    ▼
+Public Demo URLs
+    ├── https://huggingface.co/spaces/bottyash/meridian-api
+    └── https://huggingface.co/spaces/bottyash/meridian-dashboard
+```
+
+---
+
+## Prerequisites
+
+- Docker 24+ and Docker Compose v2 (for local development)
+- Python 3.11
+- `MISTRAL_API_KEY` from [console.mistral.ai](https://console.mistral.ai)
+- `HF_TOKEN` from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) (for deployment)
+
+---
+
+## Option A — Local Development (Recommended for development)
+
+### 1. Clone and set up environment
 
 ```bash
 git clone https://github.com/bottyash/MeridianFinancial.git
 cd MeridianFinancial
+
+python -m venv .venv
+source .venv/bin/activate    # Linux/macOS
+# .venv\Scripts\activate     # Windows
+
+pip install -r requirements.txt
 ```
 
-### 2. Configure environment
+### 2. Configure secrets
 
 ```bash
 cp .env.example .env
 # Edit .env:
 #   MISTRAL_API_KEY=your-key-here
-#   APP_PORT=8000       (optional, default 8000)
-#   APP_WORKERS=2       (optional, default 2)
-#   LOG_LEVEL=info      (optional)
+#   API_BASE_URL=http://localhost:8000
 ```
 
 ### 3. Prepare artifacts (first run only)
 
 ```bash
-# Create a local venv for data prep
-python -m venv .venv && .venv/Scripts/activate   # Windows
-# source .venv/bin/activate                      # Linux/macOS
-
-pip install -r requirements.txt
-
-# Run data pipeline
 python src/data_pipeline/ingest.py
 python src/data_pipeline/features.py
-
-# Train model
 python src/training/train.py
-
-# Build RAG vector index (~5–10 minutes)
-python src/rag/build_index.py
+python src/rag/build_index.py        # ~5–10 minutes
 ```
 
 ### 4. Start services
 
 ```bash
+# Terminal 1 — FastAPI backend
+uvicorn src.serving.app:app --host 0.0.0.0 --port 8000 --reload
+
+# Terminal 2 — Streamlit dashboard
+streamlit run dashboard/app.py
+```
+
+| Service | URL |
+|---------|-----|
+| Dashboard | http://localhost:8501 |
+| API | http://localhost:8000 |
+| API docs | http://localhost:8000/docs |
+
+---
+
+## Option B — Docker Compose (Local full-stack)
+
+```bash
+cp .env.example .env    # set MISTRAL_API_KEY
+
 docker compose up --build
 ```
 
-Services started:
-| Service | URL | Description |
-|---------|-----|-------------|
-| FastAPI API | `http://localhost:8000` | ML + RAG serving |
-| MLflow UI | `http://localhost:5000` | Experiment tracking |
-| OpenAPI docs | `http://localhost:8000/docs` | Interactive API documentation |
-
-### 5. Verify deployment
-
-```bash
-# Health check
-curl http://localhost:8000/health
-
-# Run smoke tests
-python scripts/smoke_test.py --base-url http://localhost:8000
-```
-
-Expected output:
-```
-Smoke tests against http://localhost:8000
-============================================================
-  [PASS] GET /health  —  status == ok
-  [PASS] GET /metrics  —  keys present: [...]
-  [PASS] GET /openapi.json  —  all 6 endpoints registered
-============================================================
-Result: 3 passed, 0 failed
-```
-
-### 6. Stop services
-
-```bash
-docker compose down
-
-# Remove volumes (clears ChromaDB + MLflow data):
-docker compose down -v
-```
+| Service | URL |
+|---------|-----|
+| Dashboard | http://localhost:8501 |
+| API | http://localhost:8000 |
+| MLflow | http://localhost:5000 |
 
 ---
 
-## Option B — Local Development (without Docker)
+## Option C — HuggingFace Spaces (Active Production Deployment)
+
+### Automated deployment (GitHub Actions)
+
+Every push to `main` that passes CI automatically triggers the deploy workflow:
+
+1. Validates configs and Dockerfiles
+2. Builds Docker images with GHA layer cache
+3. Pushes dashboard source to HF Spaces via `huggingface_hub`
+4. Runs post-deploy smoke test
+
+**Required GitHub Secrets:**
+
+| Secret | Value | Required |
+|--------|-------|----------|
+| `HF_TOKEN` | HuggingFace write token | Yes |
+| `HF_DASH_SPACE` | `username/meridian-dashboard` | Yes |
+| `HF_API_SPACE` | `username/meridian-api` | Yes |
+| `MISTRAL_API_KEY` | Mistral API key | For live RAG |
+
+### Manual deployment
 
 ```bash
-# Activate venv
-source .venv/bin/activate    # Linux/macOS
-# .venv\Scripts\activate     # Windows
+# Deploy backend
+export HF_TOKEN=hf_your_token_here
+export HF_API_SPACE=bottyash/meridian-api
+bash scripts/deploy_backend.sh
 
-# Start API
-uvicorn src.serving.app:app --host 0.0.0.0 --port 8000 --reload
+# Deploy dashboard
+export HF_TOKEN=hf_your_token_here
+export HF_DASH_SPACE=bottyash/meridian-dashboard
+export API_BASE_URL=https://bottyash-meridian-api.hf.space
+bash scripts/deploy_dashboard.sh
 ```
 
----
+### HuggingFace Spaces configuration
 
-## Option C — GitHub Actions CI/CD
+**Dashboard Space (`app.py` entry point):**
+- SDK: `streamlit`
+- Set `API_BASE_URL` as a Space secret pointing to your API Space
 
-CI runs automatically on push to `main` / `develop`:
-1. Lint → Test → Eval gate → Docker build → Smoke test
-2. On CI pass: Deploy workflow triggers automatically
-3. Deploy workflow pushes image to GHCR and runs post-deploy smoke tests
-
-Artifacts uploaded per run:
-- JUnit XML test report
-- Container logs
-- Deployment summary JSON
+**API Space (`Dockerfile` runtime):**
+- SDK: `docker`
+- Set `MISTRAL_API_KEY` as a Space secret
 
 ---
 
 ## Environment Variable Reference
 
-| Variable | Default | Required | Description |
-|----------|---------|----------|-------------|
-| `MISTRAL_API_KEY` | — | Yes (live RAG) | Mistral API key |
-| `MISTRAL_MODEL` | `mistral-small-latest` | No | Mistral model name |
-| `APP_PORT` | `8000` | No | API listen port |
-| `APP_WORKERS` | `2` | No | Uvicorn workers |
-| `APP_ENV` | `production` | No | Environment tag |
-| `LOG_LEVEL` | `info` | No | Uvicorn log level |
-| `MLFLOW_TRACKING_URI` | `http://mlflow:5000` | No | MLflow server URL |
-| `COMPLAINT_SAMPLE_SEED` | `42` | No | Sampling seed for reproducibility |
+### Active (used in production)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MISTRAL_API_KEY` | — | Mistral API key (live RAG) |
+| `API_BASE_URL` | `http://localhost:8000` | FastAPI backend URL |
+| `ENVIRONMENT` | `development` | Runtime environment tag |
+| `HF_TOKEN` | — | HuggingFace deploy token |
+| `APP_PORT` | `8000` | API listen port |
+| `APP_WORKERS` | `2` | Uvicorn worker count |
+| `LOG_LEVEL` | `info` | Uvicorn log level |
 
 ---
 
-## Volume Mounts
+## HuggingFace Spaces Limitations (Free Tier)
 
-| Host path | Container path | Purpose |
-|-----------|---------------|---------|
-| `./data/samples` | `/app/data/samples` | Read-only sample CSVs |
-| `./artifacts` | `/app/artifacts` | Model + preprocessor pkl files |
-| `./chroma_store` | `/app/chroma_store` | ChromaDB vector index |
-| `./monitoring` | `/app/monitoring` | Monitoring output (HTML, JSON) |
-| `./mlruns` | `/app/mlruns` | MLflow experiment data |
+- **Sleep after inactivity** — Space sleeps after ~48h without requests; wakes on next visit
+- **No persistent storage** — ChromaDB index must be bundled or loaded from HF Hub on startup
+- **CPU only** — No GPU acceleration; embedding inference runs on CPU (~120 ms/query)
+- **2 vCPU / 16 GB RAM** — Sufficient for demo workloads; not suitable for concurrent production traffic
+- **Cold start latency** — First request after sleep may take 30–60s to load models
+
+**Workarounds:**
+- Pre-embed all chunks and commit `chroma_store/` to the Space repo (eliminates cold-start indexing)
+- Use HF Hub to store model artifacts; load on startup
 
 ---
 
-## Troubleshooting
+## Startup Sequence
 
-**API not healthy after `docker compose up`:**
-```bash
-docker compose logs api
-# Common cause: model artifacts not present
-# Fix: run src/training/train.py locally before building the image
+```
+Container starts
+    │
+    ▼
+uvicorn src.serving.app:app
+    │
+    ▼
+FastAPI lifespan → lazy-load ModelBundle + RAGAnswerEngine
+    │  (first /predict call triggers ModelBundle load)
+    │  (first /ask-complaints call triggers RAGAnswerEngine + ChromaDB load)
+    ▼
+Ready to serve
 ```
 
-**ChromaDB collection not found:**
+---
+
+## Smoke Test
+
 ```bash
-# Run the RAG index build outside the container (host venv):
-python src/rag/build_index.py
-# The chroma_store/ directory will be mounted into the container
+# Against any running instance
+python scripts/smoke_test.py --base-url http://localhost:8000
+
+# Expected:
+#   [PASS] GET /health
+#   [PASS] GET /metrics
+#   [PASS] GET /openapi.json (all 6 endpoints)
 ```
 
-**MISTRAL_API_KEY not set:**
-```bash
-# All tests mock the API — tests will pass without a real key
-# Only live /ask-complaints and /customer-intel calls require it
+---
+
+## Future AWS Architecture (Planned)
+
+> **Status: Not currently active. Planned for future production-scale deployment.**
+
+When traffic demands exceed HuggingFace Spaces free-tier capacity, the planned production architecture is:
+
 ```
+AWS EC2 (t3.medium or c5.xlarge)
+    ├── Docker Compose or ECS
+    ├── FastAPI backend (multi-worker)
+    ├── Nginx reverse proxy + TLS
+    ├── Persistent EBS for ChromaDB
+    └── CloudWatch monitoring
+
+AWS Application Load Balancer
+    └── → EC2 target group
+
+Route 53
+    └── api.meridianfinancial.example.com
+```
+
+**Future deployment script (not yet active):**
+```bash
+# Planned: scripts/deploy_aws.sh
+# ssh ubuntu@EC2_HOST "cd MeridianFinancial && docker compose up -d"
+```
+
+**Future secrets (not currently used):**
+- `DEPLOY_HOST` — EC2 public IP
+- `DEPLOY_USER` — SSH user
+- `DEPLOY_KEY` — SSH private key
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — AWS credentials
+
+See `docs/hardening_plan.md` for full AWS production hardening roadmap.

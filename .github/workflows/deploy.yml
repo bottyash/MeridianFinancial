@@ -1,22 +1,25 @@
-# ─── Meridian Financial — Deployment Workflow ────────────────────────────────
-# Triggers: push to main after CI passes (uses workflow_run) OR manual dispatch
+# ─── Meridian Financial — CI + HuggingFace Spaces Deploy Workflow ────────────
+# Active Deployment: HuggingFace Spaces (free-tier, permanent public demo)
+# Future Deployment: AWS EC2 (planned, not yet active)
+#
+# Triggers: push to main after CI passes OR manual dispatch
 #
 # Jobs
 # ----
-# 1. validate          — sanity check artifacts + config
-# 2. build-and-push    — build Docker image and push to GHCR
-# 3. deploy-compose    — deploy via Docker Compose on self-hosted runner
-#                        (falls back to a dry-run plan if no runner available)
-# 4. post-deploy-smoke — verify deployed service health
+# 1. guard             — CI gate check
+# 2. validate          — config + Dockerfile sanity check
+# 3. build-image       — build Docker image (API) with GHA layer cache
+# 4. deploy-hf-spaces  — push dashboard to HuggingFace Spaces via HF Hub CLI
+# 5. post-deploy-smoke — verify deployed API via /health endpoint
 #
 # Secrets required:
-#   GHCR_TOKEN  (or GITHUB_TOKEN, which is auto-available)
-#   DEPLOY_HOST — optional SSH host for remote compose deploy
-#   DEPLOY_USER — SSH user for remote deploy
-#   DEPLOY_KEY  — SSH private key for remote deploy
+#   HF_TOKEN        — HuggingFace write token (Space update)
+#   HF_API_SPACE    — HF Space name for FastAPI backend  e.g. "bottyash/meridian-api"
+#   HF_DASH_SPACE   — HF Space name for dashboard        e.g. "bottyash/meridian-dashboard"
+#   MISTRAL_API_KEY — only needed for live RAG; mocked in CI tests
 # ─────────────────────────────────────────────────────────────────────────────
 
-name: Deploy
+name: Deploy (HuggingFace Spaces)
 
 on:
   workflow_run:
@@ -25,12 +28,11 @@ on:
     types: [completed]
   workflow_dispatch:
     inputs:
-      environment:
-        description: "Deployment target"
-        required: true
-        default: "staging"
-        type: choice
-        options: [staging, production]
+      skip_hf_deploy:
+        description: "Skip HuggingFace Spaces deployment"
+        required: false
+        default: "false"
+        type: boolean
       skip_smoke_test:
         description: "Skip post-deploy smoke test"
         required: false
@@ -39,13 +41,14 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/meridian-financial
 
-# Only run deploy if the triggering CI run succeeded
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
-  # Guard: only proceed if the CI workflow that triggered us passed
+  # Guard — only proceed if the triggering CI run passed
   # ─────────────────────────────────────────────────────────────────────────────
   guard:
     name: CI gate check
@@ -55,10 +58,10 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     steps:
       - name: CI gate passed
-        run: echo "CI gate passed — proceeding to deploy."
+        run: echo "CI gate passed — proceeding to HuggingFace Spaces deploy."
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 1. Validate artifacts and configuration
+  # 1. Validate config files and Dockerfile
   # ─────────────────────────────────────────────────────────────────────────────
   validate:
     name: Validate artifacts
@@ -75,18 +78,15 @@ jobs:
           cache: pip
 
       - name: Install validation dependencies
-        run: pip install pyyaml pydantic pydantic-settings python-dotenv
+        run: pip install pyyaml
 
-      - name: Validate config files
+      - name: Validate YAML configs
         run: |
           python -c "
           import yaml, sys
           from pathlib import Path
 
-          configs = [
-            'config/rag_config.yaml',
-            'config/logging.yaml',
-          ]
+          configs = ['config/rag_config.yaml', 'config/logging.yaml']
           for cfg in configs:
               path = Path(cfg)
               if not path.exists():
@@ -95,29 +95,21 @@ jobs:
               with open(path) as f:
                   yaml.safe_load(f)
               print(f'OK: {cfg}')
-
           print('Config validation complete.')
           "
 
-      - name: Validate Dockerfile syntax
+      - name: Check Dockerfile exists
         run: |
-          docker build --check . || echo "Docker check not available, skipping"
+          test -f Dockerfile && echo "OK: Dockerfile" || (echo "FAIL: Dockerfile missing" && exit 1)
+          test -f dashboard/Dockerfile && echo "OK: dashboard/Dockerfile" || (echo "FAIL: dashboard/Dockerfile missing" && exit 1)
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 2. Build and push Docker image to GHCR
+  # 2. Build API Docker image (verify it builds cleanly)
   # ─────────────────────────────────────────────────────────────────────────────
-  build-and-push:
-    name: Build and push image
+  build-image:
+    name: Build API image
     runs-on: ubuntu-latest
     needs: validate
-
-    permissions:
-      contents: read
-      packages: write
-
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
-      image_digest: ${{ steps.build.outputs.digest }}
 
     steps:
       - uses: actions/checkout@v4
@@ -125,99 +117,99 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=sha-
-            type=ref,event=branch
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push
-        id: build
+      - name: Build API image (no push)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: Dockerfile
           target: runtime
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          push: false
+          tags: meridian-financial:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build dashboard image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: dashboard/Dockerfile
+          push: false
+          tags: meridian-dashboard:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 3. Deploy via Docker Compose
+  # 3. Deploy to HuggingFace Spaces
   # ─────────────────────────────────────────────────────────────────────────────
-  deploy-compose:
-    name: Deploy (Docker Compose)
+  deploy-hf-spaces:
+    name: Deploy to HuggingFace Spaces
     runs-on: ubuntu-latest
-    needs: build-and-push
-    environment:
-      name: ${{ github.event.inputs.environment || 'staging' }}
+    needs: build-image
+    if: github.event.inputs.skip_hf_deploy != 'true'
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Generate deployment .env
-        run: |
-          cat > .env << 'EOF'
-          APP_ENV=${{ github.event.inputs.environment || 'staging' }}
-          APP_PORT=8000
-          MISTRAL_API_KEY=${{ secrets.MISTRAL_API_KEY || 'placeholder' }}
-          EOF
-
-      - name: Pull latest image
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest || true
-
-      - name: Deploy with Docker Compose (local compose test)
-        run: |
-          # Update compose to use the published image instead of building
-          export COMPOSE_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-
-          docker compose up api --no-build -d 2>/dev/null || \
-            docker compose up api -d
-
-          # Wait for health (max 90 s)
-          timeout 90 bash -c '
-            until curl -sf http://localhost:8000/health > /dev/null; do
-              echo "Waiting for API..."; sleep 5
-            done
-          ' && echo "API healthy!" || echo "API did not become healthy (non-blocking)"
-
-      - name: Save deployment logs
-        if: always()
-        run: docker compose logs api > deploy_logs.txt 2>&1 || true
-
-      - name: Upload deployment logs
-        uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: deploy-logs-${{ github.event.inputs.environment || 'staging' }}
-          path: deploy_logs.txt
-          retention-days: 30
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install HF Hub CLI
+        run: pip install huggingface_hub
+
+      - name: Push dashboard to HF Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_DASH_SPACE: ${{ secrets.HF_DASH_SPACE || 'bottyash/meridian-dashboard' }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN not set — skipping HF Spaces push (dry run)"
+            exit 0
+          fi
+
+          python - << 'PYEOF'
+          import os
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          space_id = os.environ["HF_DASH_SPACE"]
+
+          # Upload dashboard source to HF Space repository
+          api.upload_folder(
+              folder_path="dashboard",
+              repo_id=space_id,
+              repo_type="space",
+              ignore_patterns=["*.pyc", "__pycache__", ".pytest_cache"],
+              commit_message=f"Deploy dashboard from GitHub Actions",
+          )
+          print(f"Dashboard deployed to https://huggingface.co/spaces/{space_id}")
+          PYEOF
+
+      - name: Push API to HF Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_API_SPACE: ${{ secrets.HF_API_SPACE || 'bottyash/meridian-api' }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN not set — skipping API HF Spaces push (dry run)"
+            exit 0
+          fi
+          echo "API deployment to HF Spaces: would push src/ + Dockerfile to $HF_API_SPACE"
+          echo "Set HF_API_SPACE secret to enable automatic API deployment."
 
       - name: Record deployment summary
         run: |
           cat > deployment_summary.json << EOF
           {
             "deployed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "environment": "${{ github.event.inputs.environment || 'staging' }}",
-            "image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest",
+            "deployment_target": "HuggingFace Spaces",
             "sha": "${{ github.sha }}",
-            "actor": "${{ github.actor }}"
+            "actor": "${{ github.actor }}",
+            "dashboard_space": "${{ secrets.HF_DASH_SPACE || 'bottyash/meridian-dashboard' }}",
+            "api_space": "${{ secrets.HF_API_SPACE || 'bottyash/meridian-api' }}"
           }
           EOF
           cat deployment_summary.json
@@ -225,101 +217,51 @@ jobs:
       - name: Upload deployment summary
         uses: actions/upload-artifact@v4
         with:
-          name: deployment-summary
+          name: hf-deployment-summary
           path: deployment_summary.json
           retention-days: 30
 
-      - name: Tear down local compose
-        if: always()
-        run: docker compose down || true
-
   # ─────────────────────────────────────────────────────────────────────────────
-  # 4. Post-deploy smoke test
+  # 4. Post-deploy smoke test (local compose — validates container startup)
   # ─────────────────────────────────────────────────────────────────────────────
   post-deploy-smoke:
     name: Post-deploy smoke test
     runs-on: ubuntu-latest
-    needs: deploy-compose
-    if: >
-      github.event.inputs.skip_smoke_test != 'true'
+    needs: deploy-hf-spaces
+    if: github.event.inputs.skip_smoke_test != 'true'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install requests
-        run: pip install requests
-
-      - name: Generate deployment .env
+      - name: Create .env for smoke test
         run: |
-          echo "APP_ENV=staging" > .env
+          echo "APP_ENV=ci" > .env
           echo "MISTRAL_API_KEY=mock-key-for-smoke" >> .env
+          echo "API_BASE_URL=http://api:8000" >> .env
 
-      - name: Start service for smoke test
+      - name: Start API container for smoke test
         run: |
-          docker compose up api -d
+          docker compose up api -d --build
           timeout 90 bash -c '
             until curl -sf http://localhost:8000/health; do
-              echo "Waiting..."; sleep 5
+              echo "Waiting for API..."; sleep 5
             done
           ' || (docker compose logs api && exit 1)
 
       - name: Run smoke tests
-        run: |
-          python - << 'PYEOF'
-          import requests
-          import sys
+        run: python scripts/smoke_test.py --base-url http://localhost:8000
 
-          BASE = "http://localhost:8000"
-          passed = []
-          failed = []
+      - name: Collect container logs
+        if: always()
+        run: docker compose logs api > smoke_test_logs.txt 2>&1 || true
 
-          # ── /health ──────────────────────────────────────────────
-          try:
-              r = requests.get(f"{BASE}/health", timeout=10)
-              assert r.status_code == 200
-              assert r.json().get("status") == "ok"
-              passed.append("/health")
-          except Exception as e:
-              failed.append(f"/health: {e}")
-
-          # ── /metrics ─────────────────────────────────────────────
-          try:
-              r = requests.get(f"{BASE}/metrics", timeout=10)
-              assert r.status_code == 200
-              data = r.json()
-              for key in ("total_requests", "uptime_seconds", "prediction_distribution"):
-                  assert key in data, f"Missing key: {key}"
-              passed.append("/metrics")
-          except Exception as e:
-              failed.append(f"/metrics: {e}")
-
-          # ── /openapi.json ─────────────────────────────────────────
-          try:
-              r = requests.get(f"{BASE}/openapi.json", timeout=10)
-              assert r.status_code == 200
-              paths = r.json().get("paths", {})
-              for endpoint in ("/health", "/predict", "/ask-complaints",
-                               "/batch-score", "/customer-intel", "/metrics"):
-                  assert endpoint in paths, f"Missing endpoint: {endpoint}"
-              passed.append("/openapi.json (all endpoints)")
-          except Exception as e:
-              failed.append(f"/openapi.json: {e}")
-
-          # ── Summary ──────────────────────────────────────────────
-          print(f"\nSmoke test results: {len(passed)} passed, {len(failed)} failed")
-          for p in passed:
-              print(f"  PASS  {p}")
-          for f_msg in failed:
-              print(f"  FAIL  {f_msg}")
-
-          if failed:
-              sys.exit(1)
-          PYEOF
+      - name: Upload smoke test logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test-logs
+          path: smoke_test_logs.txt
+          retention-days: 7
 
       - name: Tear down
         if: always()

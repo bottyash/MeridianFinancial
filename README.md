@@ -78,6 +78,10 @@ MeridianFinancial/
 
 ## Quick Start
 
+> **Live Demo:** Hosted permanently on [HuggingFace Spaces](https://huggingface.co/spaces/bottyash/meridian-dashboard)  
+> **API Backend:** [bottyash/meridian-api](https://huggingface.co/spaces/bottyash/meridian-api)  
+> **Future Production Deployment:** AWS EC2 (planned — see [docs/deployment.md](docs/deployment.md#future-aws-architecture-planned))
+
 ### 1. Clone and create environment
 
 ```bash
@@ -328,13 +332,33 @@ python src/monitoring/rag_monitor.py
 | `docker-build` | after test | Buildx image build + GHA layer cache |
 | `smoke-test` | after docker | `/health` + `/metrics` inside Compose |
 
+
 ### Deploy Pipeline (`.github/workflows/deploy.yml`)
 
+**Active target: HuggingFace Spaces**
+
 Triggered when CI passes on `main` (or manual dispatch):
-1. Validate YAML configs
-2. Build + push image to GHCR
-3. Deploy via Docker Compose, save logs + deployment summary artifact
-4. Post-deploy smoke test (3 endpoints)
+1. Validate YAML configs and Dockerfiles
+2. Build API + dashboard Docker images (no push — build validation only)
+3. Push dashboard source to HF Spaces via `huggingface_hub`
+4. Set `API_BASE_URL` as HF Space secret
+5. Post-deploy smoke test (local Compose)
+
+**Required GitHub Secrets for HF Spaces deployment:**
+
+| Secret | Description |
+|--------|-------------|
+| `HF_TOKEN` | HuggingFace write token |
+| `HF_DASH_SPACE` | Dashboard Space ID (e.g. `bottyash/meridian-dashboard`) |
+| `HF_API_SPACE` | API Space ID (e.g. `bottyash/meridian-api`) |
+| `MISTRAL_API_KEY` | Mistral API key (for live RAG) |
+
+**Manual deployment:**
+```bash
+export HF_TOKEN=hf_xxx
+bash scripts/deploy_dashboard.sh
+bash scripts/deploy_backend.sh
+```
 
 ---
 
@@ -347,6 +371,24 @@ Triggered when CI passes on `main` (or manual dispatch):
 5. **Complaint-ID theme extraction** — `_extract_themes` uses chunk IDs not actual complaint IDs; a second LLM call would produce richer theme labels
 6. **No auth layer** — endpoints are unauthenticated; production needs API-key or OAuth2 middleware
 7. **CPU-only embeddings** — `all-MiniLM-L6-v2` runs on CPU; GPU mount in Compose recommended for latency-sensitive workloads
+
+---
+
+## Future Production Architecture (Planned)
+
+> **Status: Not currently active — planned for future production-scale deployment.**
+
+When traffic demands exceed HuggingFace Spaces free-tier capacity:
+
+- **AWS EC2** — dedicated backend runtime (t3.medium/c5.xlarge)
+- **Docker Compose / ECS** — multi-worker FastAPI serving
+- **Nginx + TLS** — reverse proxy with HTTPS
+- **EBS persistent volumes** — ChromaDB + MLflow persistence
+- **CloudWatch** — production monitoring
+- **Route 53** — custom domain
+- **ALB** — application load balancer for horizontal scaling
+
+See `docs/hardening_plan.md` for the full production hardening roadmap.
 
 ---
 

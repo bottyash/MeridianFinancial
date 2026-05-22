@@ -3,10 +3,13 @@ dashboard/utils/config.py
 --------------------------
 Deployment-aware configuration for the Meridian Financial dashboard.
 
+Active Deployment Target: HuggingFace Spaces (free-tier, permanent public demo)
+Future Deployment:        AWS EC2 (planned, not yet active)
+
 Reads from environment variables so the same code runs on:
-  - local development (http://localhost:8000)
-  - AWS EC2 backend   (https://your-ec2-host/api)
-  - HuggingFace Spaces (public backend URL via HF Secret)
+  - local development       (http://localhost:8000)
+  - HuggingFace Spaces      (set API_BASE_URL as a Space secret)
+  - Future AWS EC2 backend  (set API_BASE_URL to EC2 public URL)
 
 Environment variables
 ---------------------
@@ -14,6 +17,7 @@ API_BASE_URL       Base URL of the FastAPI backend (no trailing slash)
 ENVIRONMENT        development | staging | production
 REQUEST_TIMEOUT    HTTP request timeout in seconds (default 30)
 DASHBOARD_TITLE    Browser tab / page title
+HF_SPACE_URL       Public HF Spaces URL for display purposes (optional)
 """
 
 from __future__ import annotations

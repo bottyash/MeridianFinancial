@@ -1,5 +1,8 @@
 # Architecture — Meridian Financial Customer Intelligence Platform
 
+> **Active Deployment:** HuggingFace Spaces (free-tier, permanent public demo)
+> **Future Deployment:** AWS EC2 (planned production-scale; see [deployment.md](deployment.md#future-aws-architecture-planned))
+
 ## System Overview
 
 The Meridian Financial platform is a modular, production-minded AI system that merges two ML subsystems — campaign conversion prediction and RAG-based complaint intelligence — into a unified FastAPI serving layer.
